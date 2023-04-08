@@ -1,0 +1,10 @@
+*~
+.*
+!.git/
+!.gitignore
+
+__pycache__/
+
+data/
+*data
+*.ipynb

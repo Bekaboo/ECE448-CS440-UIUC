@@ -1,0 +1,8 @@
+2023-03-04T14:07:23,938 ERROR: You must give at least one requirement to uninstall (see "pip help uninstall")
+2023-03-04T14:07:23,939 Exception information:
+2023-03-04T14:07:23,939 Traceback (most recent call last):
+2023-03-04T14:07:23,939   File "/home/zeng/Code/ece448sp23/mp06_extra/.venv/lib/python3.10/site-packages/pip/_internal/cli/base_command.py", line 160, in exc_logging_wrapper
+2023-03-04T14:07:23,939     status = run_func(*args)
+2023-03-04T14:07:23,939   File "/home/zeng/Code/ece448sp23/mp06_extra/.venv/lib/python3.10/site-packages/pip/_internal/commands/uninstall.py", line 88, in run
+2023-03-04T14:07:23,939     raise InstallationError(
+2023-03-04T14:07:23,939 pip._internal.exceptions.InstallationError: You must give at least one requirement to uninstall (see "pip help uninstall")

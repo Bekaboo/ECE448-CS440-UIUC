@@ -1,0 +1,14 @@
+*~
+.*
+!.git/
+!.gitignore
+
+__pycache__/
+.env/
+
+data/
+*data
+*.ipynb
+
+GIF/
+key_s
