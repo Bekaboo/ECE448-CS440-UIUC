@@ -41,13 +41,23 @@ class CIFAR10(Dataset):
         Initialize your dataset here. Note that transform and target_transform
         correspond to your data transformations for train and test respectively.
         """
-        raise NotImplementedError("You need to write this part!")
+        # dlist[i] = {
+        #     b'batch_label': b'training batch 1 of 5',
+        #     b'labels': 8047 labels
+        #     b'data': 8047 images
+        #     b'filenames': 8047 filenames
+        # }
+        dlist = [unpickle(data_file) for data_file in data_files]
+        self.images = [image for data in dlist for image in data[b"data"]]
+        self.labels = [label for data in dlist for label in data[b"labels"]]
+        self.transform = transform
+        self.target_transform = target_transform
 
     def __len__(self):
         """
         Return the length of your dataset here.
         """
-        raise NotImplementedError("You need to write this part!")
+        return len(self.labels)
 
     def __getitem__(self, idx):
         """
@@ -59,7 +69,10 @@ class CIFAR10(Dataset):
         Outputs:
             y:      a tuple (image, label), although this is arbitrary so you can use whatever you would like.
         """
-        raise NotImplementedError("You need to write this part!")
+        return (
+            torch.tensor(np.array(self.images[idx]).reshape(3, 32, 32)),
+            self.labels[idx],
+        )
 
 
 def get_preprocess_transform(mode):
@@ -81,7 +94,7 @@ def build_dataset(data_files, transform=None):
     Outputs:
         dataset:      a PyTorch dataset object to be used in training/testing
     """
-    raise NotImplementedError("You need to write this part!")
+    return CIFAR10(data_files, transform=transform)
 
 
 """
@@ -101,7 +114,7 @@ def build_dataloader(dataset, loader_params):
     Outputs:
         dataloader:      a PyTorch dataloader object to be used in training/testing
     """
-    raise NotImplementedError("You need to write this part!")
+    return DataLoader(dataset, **loader_params)
 
 
 """
