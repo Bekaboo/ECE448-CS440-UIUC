@@ -142,7 +142,7 @@ class FinetuneNet(torch.nn.Module):
         3. Initialize linear layer(s).
         """
         super().__init__()
-        self.model = resnet18(pretrained=False)
+        self.model = resnet18(pretrained=trained)
         if trained:
             state_dict = torch.load(pretrained_path)
             for layer in state_dict:
@@ -150,7 +150,11 @@ class FinetuneNet(torch.nn.Module):
                 state_dict[layer].requires_grad_(False)
             self.model.load_state_dict(state_dict)
         # Change the shape of the last layer to match the number of classes
-        self.model.fc = nn.Linear(self.model.fc.in_features, 8)
+        self.model.fc = nn.Sequential(
+            nn.Linear(in_features=self.model.fc.in_features, out_features=256),
+            nn.ReLU(),
+            nn.Linear(in_features=256, out_features=8),
+        )
 
     def forward(self, x):
         """
@@ -306,7 +310,7 @@ def run_model():
     Outputs:
         model:              trained model
     """
-    model = build_model()
+    model = build_model(True)
     train_dataloader = build_dataloader(
         build_dataset(
             [
@@ -315,11 +319,15 @@ def run_model():
                 "cifar10_batches/data_batch_3",
                 "cifar10_batches/data_batch_4",
                 "cifar10_batches/data_batch_5",
-            ]
+            ],
+            transform=get_preprocess_transform("train"),
         )
     )
     test_dataloader = build_dataloader(
-        build_dataset(["cifar10_batches/test_batch"])
+        build_dataset(
+            ["cifar10_batches/test_batch"],
+            transform=get_preprocess_transform("train"),
+        ),
     )
     loss_fn = nn.CrossEntropyLoss()
     optimizer = build_optimizer("Adam", model.parameters(), {"lr": 0.001})
