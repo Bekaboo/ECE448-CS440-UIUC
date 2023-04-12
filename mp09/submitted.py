@@ -50,8 +50,10 @@ class CIFAR10(Dataset):
         dlist = [unpickle(data_file) for data_file in data_files]
         self.images = [image for data in dlist for image in data[b"data"]]
         self.labels = [label for data in dlist for label in data[b"labels"]]
-        self.transform = transform
-        self.target_transform = target_transform
+        self.transform = transform if transform else lambda x: x
+        self.target_transform = (
+            target_transform if target_transform else lambda x: x
+        )
 
     def __len__(self):
         """
@@ -69,10 +71,15 @@ class CIFAR10(Dataset):
         Outputs:
             y:      a tuple (image, label), although this is arbitrary so you can use whatever you would like.
         """
-        return (
-            torch.tensor(np.array(self.images[idx]).reshape(3, 32, 32)),
-            self.labels[idx],
+        image = self.transform(
+            torch.tensor(
+                np.array(self.images[idx])
+                .astype(np.float32)
+                .reshape(3, 32, 32)
+            )
         )
+        label = self.target_transform(self.labels[idx])
+        return image, label
 
 
 def get_preprocess_transform(mode):
@@ -102,7 +109,9 @@ def build_dataset(data_files, transform=None):
 """
 
 
-def build_dataloader(dataset, loader_params):
+def build_dataloader(
+    dataset, loader_params={"batch_size": 32, "shuffle": True}
+):
     """
     Parameters:
         dataset:         a PyTorch dataset to load data
@@ -123,7 +132,7 @@ def build_dataloader(dataset, loader_params):
 
 
 class FinetuneNet(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, trained=False, pretrained_path="resnet18.pt"):
         """
         Initialize your neural network here. Remember that you will be performing finetuning
         in this network so follow these steps:
@@ -133,10 +142,15 @@ class FinetuneNet(torch.nn.Module):
         3. Initialize linear layer(s).
         """
         super().__init__()
-        ################# Your Code Starts Here #################
-
-        raise NotImplementedError("You need to write this part!")
-        ################## Your Code Ends here ##################
+        self.model = resnet18(pretrained=False)
+        if trained:
+            state_dict = torch.load(pretrained_path)
+            for layer in state_dict:
+                # Freeze the backbone
+                state_dict[layer].requires_grad_(False)
+            self.model.load_state_dict(state_dict)
+        # Change the shape of the last layer to match the number of classes
+        self.model.fc = nn.Linear(self.model.fc.in_features, 8)
 
     def forward(self, x):
         """
@@ -148,10 +162,7 @@ class FinetuneNet(torch.nn.Module):
         Outputs:
             y:      an (N, output_size) tensor of output from the network
         """
-        ################# Your Code Starts Here #################
-
-        raise NotImplementedError("You need to write this part!")
-        ################## Your Code Ends here ##################
+        return self.model.forward(x)
 
 
 """
@@ -167,7 +178,7 @@ def build_model(trained=False):
     Outputs:
         model:           the model to be used for training/testing
     """
-    net = FinetuneNet()
+    net = FinetuneNet(trained)
     return net
 
 
@@ -186,7 +197,14 @@ def build_optimizer(optim_type, model_params, hparams):
     Outputs:
         optimizer:       a PyTorch optimizer object to be used in training
     """
-    raise NotImplementedError("You need to write this part!")
+    if optim_type == "Adam":
+        return torch.optim.Adam(model_params, lr=hparams["lr"])
+    elif optim_type == "SGD":
+        return torch.optim.SGD(
+            model_params, lr=hparams["lr"], momentum=hparams["momentum"]
+        )
+    else:
+        raise NotImplementedError("Optimizer not implemented!")
 
 
 """
@@ -212,10 +230,21 @@ def train(train_dataloader, model, loss_fn, optimizer):
         optimizer:          optimizer
     """
 
-    ################# Your Code Starts Here #################
+    for images, labels in train_dataloader:
+        # 1.  The model makes a prediction.
+        output = model.forward(images)
 
-    raise NotImplementedError("You need to write this part!")
-    ################## Your Code Ends here ##################
+        # 2.  Calculate the error in the prediction (loss).
+        loss = loss_fn(output, labels)
+
+        # 3.  Zero the gradients of the optimizer.
+        optimizer.zero_grad()
+
+        # 4.  Perform backpropagation on the loss.
+        loss.backward()
+
+        # 5.  Step the optimizer.
+        optimizer.step()
 
 
 """
@@ -245,9 +274,20 @@ def test(test_dataloader, model):
         test_acc:           the output test accuracy (0.0 <= acc <= 1.0)
     """
 
-    # test_loss = something
-    # print("Test loss:", test_loss)
-    raise NotImplementedError("You need to write this part!")
+    model.eval()
+    with torch.no_grad():
+        correct = 0
+        total = 0
+        for images, labels in test_dataloader:
+            outputs = model(images)
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+        print(
+            "Accuracy of the network on the 10000 test images: %d %%"
+            % (100 * correct / total)
+        )
+    model.train()
 
 
 """
@@ -266,4 +306,52 @@ def run_model():
     Outputs:
         model:              trained model
     """
-    raise NotImplementedError("You need to write this part!")
+    model = build_model()
+    train_dataloader = build_dataloader(
+        build_dataset(
+            [
+                "cifar10_batches/data_batch_1",
+                "cifar10_batches/data_batch_2",
+                "cifar10_batches/data_batch_3",
+                "cifar10_batches/data_batch_4",
+                "cifar10_batches/data_batch_5",
+            ]
+        )
+    )
+    test_dataloader = build_dataloader(
+        build_dataset(["cifar10_batches/test_batch"])
+    )
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = build_optimizer("Adam", model.parameters(), {"lr": 0.001})
+
+    train(train_dataloader, model, loss_fn, optimizer)
+    test(test_dataloader, model)
+    return model
+
+
+if __name__ == "__main__":
+
+    def check_data():
+        files = [
+            "cifar10_batches/data_batch_1",
+            "cifar10_batches/data_batch_2",
+        ]
+        dataset = build_dataset(files)
+        print("length of dataset: {}".format(len(dataset)))
+        image, label = dataset[0]
+        print("image type: {}".format(type(image)))
+        print("label type: {}".format(type(label)))
+        print("image shape: {}".format(image.shape))
+        print("label: {}".format(label))
+        dataloader = build_dataloader(dataset)
+        for image, label in dataloader:
+            print("image type (dataloader): {}".format(type(image)))
+            print("label type (dataloader): {}".format(type(label)))
+            print("image shape (dataloader): {}".format(image.shape))
+            print("label (dataloader): {}".format(label))
+            break
+
+    def check_model():
+        run_model()
+
+    check_model()
