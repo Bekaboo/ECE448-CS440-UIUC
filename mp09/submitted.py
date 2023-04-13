@@ -142,16 +142,12 @@ class FinetuneNet(torch.nn.Module):
         super().__init__()
         self.model = resnet18()
         if pretrained:
+            print("Loading pretrained model from {}".format(pretrained_path))
             self.model.load_state_dict(torch.load(pretrained_path))
             for param in self.model.parameters():
                 param.requires_grad = False
         # Change the shape of the last layer to match the number of classes
-        self.model.fc = nn.Sequential(
-            nn.Linear(in_features=self.model.fc.in_features, out_features=256),
-            nn.ReLU(),
-            nn.Linear(in_features=256, out_features=num_classes),
-            nn.Softmax(dim=1),
-        )
+        self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
 
     def forward(self, x):
         """
