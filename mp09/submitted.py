@@ -21,6 +21,10 @@ from torchvision import transforms
 
 from models import resnet18
 
+num_classes = 8
+num_epochs = 1
+torch.set_printoptions(linewidth=200)
+
 
 def unpickle(file):
     import pickle
@@ -71,14 +75,8 @@ class CIFAR10(Dataset):
         Outputs:
             y:      a tuple (image, label), although this is arbitrary so you can use whatever you would like.
         """
-        image = self.transform(
-            torch.tensor(
-                np.array(self.images[idx])
-                .astype(np.float32)
-                .reshape(3, 32, 32)
-            )
-        )
-        label = self.target_transform(self.labels[idx])
+        image = torch.tensor(self.images[idx]).reshape(3, 32, 32).float()
+        label = self.labels[idx]
         return image, label
 
 
@@ -90,7 +88,7 @@ def get_preprocess_transform(mode):
         transform:      a torchvision transforms object e.g. transforms.Compose([...]) etc.
     """
 
-    raise NotImplementedError("You need to write this part!")
+    return lambda x: x
 
 
 def build_dataset(data_files, transform=None):
@@ -132,28 +130,27 @@ def build_dataloader(
 
 
 class FinetuneNet(torch.nn.Module):
-    def __init__(self, trained=False, pretrained_path="resnet18.pt"):
+    def __init__(self, pretrained=False, pretrained_path="resnet18.pt"):
         """
-        Initialize your neural network here. Remember that you will be performing finetuning
-        in this network so follow these steps:
+        Initialize your neural network here. Remember that you will be
+        performing finetuning in this network so follow these steps:
 
         1. Initialize convolutional backbone with pretrained model parameters.
         2. Freeze convolutional backbone.
         3. Initialize linear layer(s).
         """
         super().__init__()
-        self.model = resnet18(pretrained=trained)
-        if trained:
-            state_dict = torch.load(pretrained_path)
-            for layer in state_dict:
-                # Freeze the backbone
-                state_dict[layer].requires_grad_(False)
-            self.model.load_state_dict(state_dict)
+        self.model = resnet18()
+        if pretrained:
+            self.model.load_state_dict(torch.load(pretrained_path))
+            for param in self.model.parameters():
+                param.requires_grad = False
         # Change the shape of the last layer to match the number of classes
         self.model.fc = nn.Sequential(
             nn.Linear(in_features=self.model.fc.in_features, out_features=256),
             nn.ReLU(),
-            nn.Linear(in_features=256, out_features=8),
+            nn.Linear(in_features=256, out_features=num_classes),
+            nn.Softmax(dim=1),
         )
 
     def forward(self, x):
@@ -202,13 +199,10 @@ def build_optimizer(optim_type, model_params, hparams):
         optimizer:       a PyTorch optimizer object to be used in training
     """
     if optim_type == "Adam":
-        return torch.optim.Adam(model_params, lr=hparams["lr"])
-    elif optim_type == "SGD":
-        return torch.optim.SGD(
-            model_params, lr=hparams["lr"], momentum=hparams["momentum"]
-        )
-    else:
-        raise NotImplementedError("Optimizer not implemented!")
+        return torch.optim.Adam(params=model_params, **hparams)
+    if optim_type == "SGD":
+        return torch.optim.SGD(params=model_params, **hparams)
+    raise NotImplementedError(f"Optimizer {optim_type} not implemented!")
 
 
 """
@@ -240,6 +234,10 @@ def train(train_dataloader, model, loss_fn, optimizer):
 
         # 2.  Calculate the error in the prediction (loss).
         loss = loss_fn(output, labels)
+        print(f"Predictions: {torch.argmax(output, 1)}")
+        print(f"Labels:      {labels}")
+        print(f"Loss:        {loss}")
+        print("-" * 80)
 
         # 3.  Zero the gradients of the optimizer.
         optimizer.zero_grad()
@@ -278,20 +276,15 @@ def test(test_dataloader, model):
         test_acc:           the output test accuracy (0.0 <= acc <= 1.0)
     """
 
-    model.eval()
     with torch.no_grad():
         correct = 0
         total = 0
         for images, labels in test_dataloader:
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
+            outputs = model.forward(images)
+            prediction = torch.argmax(outputs, 1)
             total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-        print(
-            "Accuracy of the network on the 10000 test images: %d %%"
-            % (100 * correct / total)
-        )
-    model.train()
+            correct += (prediction == labels).sum().item()
+        return correct / total
 
 
 """
@@ -310,7 +303,6 @@ def run_model():
     Outputs:
         model:              trained model
     """
-    model = build_model(True)
     train_dataloader = build_dataloader(
         build_dataset(
             [
@@ -320,20 +312,19 @@ def run_model():
                 "cifar10_batches/data_batch_4",
                 "cifar10_batches/data_batch_5",
             ],
-            transform=get_preprocess_transform("train"),
         )
     )
     test_dataloader = build_dataloader(
-        build_dataset(
-            ["cifar10_batches/test_batch"],
-            transform=get_preprocess_transform("train"),
-        ),
+        build_dataset(["cifar10_batches/test_batch"])
     )
+    model = build_model(True)
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = build_optimizer("Adam", model.parameters(), {"lr": 0.001})
+    optimizer = build_optimizer("Adam", model.model.parameters(), {"lr": 0.0005})
 
-    train(train_dataloader, model, loss_fn, optimizer)
-    test(test_dataloader, model)
+    for epoch in range(num_epochs):
+        print(f"========== Epoch {epoch} ==========")
+        train(train_dataloader, model, loss_fn, optimizer)
+        print(f"Accuracy: {test(test_dataloader, model)}")
     return model
 
 
@@ -360,6 +351,13 @@ if __name__ == "__main__":
             break
 
     def check_model():
-        run_model()
+        model = run_model()
+        test_dataloader = build_dataloader(
+            build_dataset(
+                ["cifar10_batches/test_batch"],
+                transform=get_preprocess_transform("train"),
+            ),
+        )
+        test(test_dataloader, model)
 
     check_model()
