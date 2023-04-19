@@ -64,7 +64,20 @@ def update_utility(model, P, U_current):
     Output:
     U_next - The updated utility function, which is an M x N array
     """
-    raise RuntimeError("You need to write this part!")
+    U_next = np.zeros((model.M, model.N))
+    for row, col in itertools.product(range(model.M), range(model.N)):
+        max_score = -np.inf
+        for actionnr in range(4):
+            score = 0
+            for row2, col2 in itertools.product(
+                range(model.M), range(model.N)
+            ):
+                score += (
+                    P[row, col, actionnr, row2, col2] * U_current[row2, col2]
+                )
+            max_score = max(max_score, score)
+        U_next[row, col] = model.R[row, col] + model.gamma * max_score
+    return U_next
 
 
 def value_iteration(model):
@@ -75,7 +88,20 @@ def value_iteration(model):
     Output:
     U - The utility function, which is an M x N array
     """
-    raise RuntimeError("You need to write this part!")
+    eps = 1e-3
+    numiter = 400
+    U = np.zeros((model.M, model.N))
+    transition_matrix = compute_transition_matrix(model)
+    for cnt in range(numiter):
+        should_break = True
+        U_next = update_utility(model, transition_matrix, U)
+        for row, col in itertools.product(range(model.M), range(model.N)):
+            if abs(U_next[row, col] - U[row, col]) >= eps:
+                should_break = False
+        U = U_next
+        if should_break:
+            break
+    return U
 
 
 if __name__ == "__main__":
