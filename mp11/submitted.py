@@ -9,6 +9,7 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
+import pickle
 
 
 class q_learner:
@@ -38,7 +39,13 @@ class q_learner:
         @return:
         None
         """
-        raise RuntimeError("You need to write this!")
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.gamma = gamma
+        self.nfirst = nfirst
+        self.state_cardinality = state_cardinality
+        self.Q = np.zeros(state_cardinality + [3])
+        self.N = np.zeros(state_cardinality + [3])
 
     def report_exploration_counts(self, state):
         """
@@ -54,7 +61,7 @@ class q_learner:
           number of times that each action has been explored from this state.
           The mapping from actions to integers is up to you, but there must be three of them.
         """
-        raise RuntimeError("You need to write this!")
+        return self.N[tuple(state)]
 
     def choose_unexplored_action(self, state):
         """
@@ -75,7 +82,22 @@ class q_learner:
           Otherwise, choose one uniformly at random from those w/count less than n_explore.
           When you choose an action, you should increment its count in your counter table.
         """
-        raise RuntimeError("You need to write this!")
+        actions = (
+            np.argwhere(
+                self.report_exploration_counts(state) < self.nfirst
+            ).flatten()
+            - 1
+        )
+        if state[-1] == 0:  # paddle at top
+            actions = np.delete(actions, np.argwhere(actions == -1))
+        elif state[-1] == self.state_cardinality[-1] - 1:  # paddle at bottom
+            actions = np.delete(actions, np.argwhere(actions == 1))
+
+        if len(actions) > 0:
+            action = random.choice(actions)
+            self.N[tuple(state + [action + 1])] += 1
+            return action
+        return None
 
     def report_q(self, state):
         """
@@ -91,7 +113,7 @@ class q_learner:
           reward plus expected future utility of each of the three actions.
           The mapping from actions to integers is up to you, but there must be three of them.
         """
-        raise RuntimeError("You need to write this!")
+        return self.Q[tuple(state)]
 
     def q_local(self, reward, newstate):
         """
@@ -108,7 +130,7 @@ class q_learner:
         @return:
         Q_local (scalar float): the local value of Q
         """
-        raise RuntimeError("You need to write this!")
+        return reward + self.gamma * np.max(self.report_q(newstate))
 
     def learn(self, state, action, reward, newstate):
         """
@@ -126,7 +148,12 @@ class q_learner:
         @return:
         None
         """
-        raise RuntimeError("You need to write this!")
+        # Q(s,a) <- (1 - alpha) * Q(s,a) + alpha * Q_local
+        q_old = self.report_q(state)[action + 1]
+        q_local = self.q_local(reward, newstate)
+        self.Q[tuple(state + [action + 1])] = (
+            1 - self.alpha
+        ) * q_old + self.alpha * q_local
 
     def save(self, filename):
         """
@@ -140,7 +167,9 @@ class q_learner:
         @return:
         None
         """
-        raise RuntimeError("You need to write this!")
+        with open(filename, "wb") as f:
+            pickle.dump(self.Q, f)
+            pickle.dump(self.N, f)
 
     def load(self, filename):
         """
@@ -154,7 +183,9 @@ class q_learner:
         @return:
         None
         """
-        raise RuntimeError("You need to write this!")
+        with open(filename, "rb") as f:
+            self.Q = pickle.load(f)
+            self.N = pickle.load(f)
 
     def exploit(self, state):
         """
@@ -171,7 +202,12 @@ class q_learner:
         Q (scalar float):
           The Q-value of the selected action
         """
-        raise RuntimeError("You need to write this!")
+        q = self.report_q(state)
+        if state[-1] == 0:  # paddle at top
+            q[0] = -np.inf
+        elif state[-1] == self.state_cardinality[-1] - 1:  # paddle at bottom
+            q[2] = -np.inf
+        return np.argmax(q) - 1, np.max(q)
 
     def act(self, state):
         """
@@ -192,7 +228,25 @@ class q_learner:
         0 if the paddle should be stationary
         1 if the paddle should move downward
         """
-        raise RuntimeError("You need to write this!")
+        action = self.choose_unexplored_action(state)
+        if action is None:
+            if np.random.random() < self.epsilon:
+                if state[-1] == 0:  # paddle is at the top
+                    action = random.randint(0, 1)
+                elif (
+                    state[-1] == self.state_cardinality[-1] - 1
+                ):  # paddle is at the bottom
+                    action = random.randint(-1, 0)
+                else:
+                    action = random.randint(-1, 1)
+                self.N[tuple(state + [action + 1])] += 1
+            else:
+                action, _ = self.exploit(state)
+                self.N[tuple(state + [action + 1])] += 1
+        newstate = state[:]
+        newstate[-1] += action
+        self.learn(state, action, 0, newstate)
+        return action
 
 
 class deep_q:
