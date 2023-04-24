@@ -88,10 +88,6 @@ class q_learner:
             ).flatten()
             - 1
         )
-        if state[-1] == 0:  # paddle at top
-            actions = np.delete(actions, np.argwhere(actions == -1))
-        elif state[-1] == self.state_cardinality[-1] - 1:  # paddle at bottom
-            actions = np.delete(actions, np.argwhere(actions == 1))
 
         if len(actions) > 0:
             action = random.choice(actions)
@@ -203,10 +199,6 @@ class q_learner:
           The Q-value of the selected action
         """
         q = self.report_q(state)
-        if state[-1] == 0:  # paddle at top
-            q[0] = -np.inf
-        elif state[-1] == self.state_cardinality[-1] - 1:  # paddle at bottom
-            q[2] = -np.inf
         return np.argmax(q) - 1, np.max(q)
 
     def act(self, state):
@@ -231,20 +223,17 @@ class q_learner:
         action = self.choose_unexplored_action(state)
         if action is None:
             if np.random.random() < self.epsilon:
-                if state[-1] == 0:  # paddle is at the top
-                    action = random.randint(0, 1)
-                elif (
-                    state[-1] == self.state_cardinality[-1] - 1
-                ):  # paddle is at the bottom
-                    action = random.randint(-1, 0)
-                else:
-                    action = random.randint(-1, 1)
+                action = random.randint(-1, 1)
                 self.N[tuple(state + [action + 1])] += 1
             else:
                 action, _ = self.exploit(state)
                 self.N[tuple(state + [action + 1])] += 1
         newstate = state[:]
-        newstate[-1] += action
+        # Position of the paddle cannot less than 0 or greater than the maximum
+        # value specified in state_cardinality
+        newstate[-1] == min(
+            self.state_cardinality[-1] - 1, max(0, newstate[-1] + action)
+        )
         self.learn(state, action, 0, newstate)
         return action
 
