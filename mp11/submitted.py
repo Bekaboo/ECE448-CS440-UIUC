@@ -9,7 +9,6 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
-import pickle
 
 
 class q_learner:
@@ -164,8 +163,7 @@ class q_learner:
         None
         """
         with open(filename, "wb") as f:
-            pickle.dump(self.Q, f)
-            pickle.dump(self.N, f)
+            np.savez(f, Q=self.Q, N=self.N)
 
     def load(self, filename):
         """
@@ -180,8 +178,9 @@ class q_learner:
         None
         """
         with open(filename, "rb") as f:
-            self.Q = pickle.load(f)
-            self.N = pickle.load(f)
+            data = np.load(f)
+            self.Q = data["Q"]
+            self.N = data["N"]
 
     def exploit(self, state):
         """
