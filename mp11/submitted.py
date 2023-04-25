@@ -9,6 +9,7 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class q_learner:
@@ -255,7 +256,31 @@ class deep_q:
         @return:
         None
         """
-        raise RuntimeError("You need to write this!")
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.gamma = gamma
+        self.nfirst = nfirst
+        self.state_dim = 5
+        self.action_dim = 1
+        self.critic = nn.Sequential(
+            nn.Linear(self.state_dim + self.action_dim, 256),
+            nn.ReLU(),
+            nn.Linear(in_features=256, out_features=1),
+        )
+
+    def report_q(self, state):
+        """
+        Report the current Q values for the given state.
+        @params:
+        state (list of 5 ints): ball_x, ball_y, ball_vx, ball_vy, paddle_y.
+
+        @return:
+        Q (array of 3 floats):
+          reward plus expected future utility of each of the three actions.
+          The mapping from actions to integers is up to you, but there must be three of them.
+        """
+        # Not really useful in deep Q learning
+        return [0, 0, 0]
 
     def act(self, state):
         """
@@ -271,7 +296,21 @@ class deep_q:
         0 if the paddle should be stationary
         1 if the paddle should move downward
         """
-        raise RuntimeError("You need to write this!")
+        # With probability epsilon, choose an action uniformly at random.
+        if np.random.random() < self.epsilon:
+            return random.random() * 2 - 1
+        probabilities = nn.Softmax(dim=0)(
+            torch.tensor(
+                [
+                    self.critic(torch.tensor(state + [action]).float())
+                    for action in [-1, 0, 1]
+                ]
+            )
+        )
+        # Otherwise, act based on the probabilities of each action
+        return torch.dot(
+            torch.tensor([-1, 0, 1]).float(), probabilities
+        ).item()
 
     def learn(self, state, action, reward, newstate):
         """
@@ -286,7 +325,15 @@ class deep_q:
         @return:
         None
         """
-        raise RuntimeError("You need to write this!")
+        optimizer = torch.optim.Adam(self.critic.parameters(), lr=self.alpha)
+        q_local = reward + self.gamma * self.critic(
+            torch.tensor(newstate + [self.act(newstate)])
+        )
+        q_target = self.critic(torch.tensor(state + [action]))
+        loss = F.mse_loss(q_local, q_target)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
     def save(self, filename):
         """
@@ -299,7 +346,8 @@ class deep_q:
         @return:
         None
         """
-        raise RuntimeError("You need to write this!")
+        with open(filename, "wb") as f:
+            torch.save(self.critic.state_dict(), f)
 
     def load(self, filename):
         """
@@ -312,4 +360,5 @@ class deep_q:
         @return:
         None
         """
-        raise RuntimeError("You need to write this!")
+        with open(filename, "rb") as f:
+            self.critic.load_state_dict(torch.load(f))
