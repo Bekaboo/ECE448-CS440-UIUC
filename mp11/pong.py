@@ -1,4 +1,8 @@
-import random, argparse, copy, submitted, json
+import random
+import argparse
+import copy
+import submitted
+import json
 import numpy as np
 
 
@@ -106,30 +110,30 @@ class PongGame:
 
         # ball collision with walls
         if ball_y <= self.radius:
-            ball_vy = max(1, abs(ball_vy) + random.choice([-1, 0, 1]))
+            ball_vy = max(1, abs(ball_vy) + (random.random() * 2 - 1))
         if ball_y >= self.game_h - self.radius:
-            ball_vy = min(-1, -abs(ball_vy) + random.choice([-1, 0, 1]))
+            ball_vy = min(-1, -abs(ball_vy) + (random.random() * 2 - 1))
         if ball_x <= self.radius:
-            ball_vx = max(1, abs(ball_vx) + random.choice([-1, 0, 1]))
+            ball_vx = max(1, abs(ball_vx) + (random.random() * 2 - 1))
 
         # print('ball_x:',ball_x,', threshold: ',self.game_w-self.radius-self.paddle_w)
         if ball_x >= self.game_w - self.radius - self.paddle_w:
             # if ball hits squarely on paddle, reverse its velocity
             if abs(ball_y - paddle_y) <= self.half_pad_h:
                 ball_vx = min(
-                    -1, -1.1 * abs(ball_vx) + random.choice([-1, 0, 1])
+                    -1, -1.1 * abs(ball_vx) + (random.random() * 2 - 1)
                 )
-                ball_vy = 1.1 * ball_vy + random.choice([-1, 0, 1])
+                ball_vy = 1.1 * ball_vy + (random.random() * 2 - 1)
                 self.score += 1
                 reward = 1
 
             # if ball hits obliquely on paddle, reverse vx and vy
             elif abs(ball_y - paddle_y) <= self.half_pad_h + self.radius:
                 ball_vx = min(
-                    -1, -1.1 * abs(ball_vy) + random.choice([-1, 0, 1])
+                    -1, -1.1 * abs(ball_vy) + (random.random() * 2 - 1)
                 )
                 ball_vy = np.sign(ball_y - paddle_y) * (
-                    1.1 * abs(ball_vx) + random.choice([-1, 0, 1])
+                    1.1 * abs(ball_vx) + (random.random() * 2 - 1)
                 )
                 self.score += 1
                 reward = 1
@@ -185,6 +189,7 @@ class PongGame:
           q_states (list): list of the q-values of requested states
         """
         state = self.state_init()
+        print(f"state: {state}")
         paddle_v = 0
 
         # Main loop
@@ -231,13 +236,14 @@ class PongGame:
                 n_rewards += 1
                 if reward < 0:
                     print(
-                        "Completed %d games, %d rewards, %d frames, score %d, max score %d"
+                        "Completed %d games, %d rewards, %d frames, score %d, max score %d, avg score %f"
                         % (
                             n_games,
                             n_rewards,
                             n_frames,
                             scores[-1],
                             self.max_score,
+                            np.mean(scores[-10:]),
                         )
                     )
                     n_games += 1

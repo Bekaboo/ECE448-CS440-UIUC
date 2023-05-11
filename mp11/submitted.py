@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 
 
 class q_learner:
@@ -61,7 +62,7 @@ class q_learner:
           number of times that each action has been explored from this state.
           The mapping from actions to integers is up to you, but there must be three of them.
         """
-        return self.N[tuple(state)]
+        return self.N[tuple([round(s) for s in state])]
 
     def choose_unexplored_action(self, state):
         """
@@ -82,6 +83,7 @@ class q_learner:
           Otherwise, choose one uniformly at random from those w/count less than n_explore.
           When you choose an action, you should increment its count in your counter table.
         """
+        state = [round(s) for s in state]
         actions = (
             np.argwhere(
                 self.report_exploration_counts(state) < self.nfirst
@@ -109,7 +111,7 @@ class q_learner:
           reward plus expected future utility of each of the three actions.
           The mapping from actions to integers is up to you, but there must be three of them.
         """
-        return self.Q[tuple(state)]
+        return self.Q[tuple([round(s) for s in state])]
 
     def q_local(self, reward, newstate):
         """
@@ -126,7 +128,9 @@ class q_learner:
         @return:
         Q_local (scalar float): the local value of Q
         """
-        return reward + self.gamma * np.max(self.report_q(newstate))
+        return reward + self.gamma * np.max(
+            self.report_q([round(s) for s in newstate])
+        )
 
     def learn(self, state, action, reward, newstate):
         """
@@ -145,6 +149,9 @@ class q_learner:
         None
         """
         # Q(s,a) <- (1 - alpha) * Q(s,a) + alpha * Q_local
+        action = round(action)
+        state = [round(s) for s in state]
+        newstate = [round(s) for s in newstate]
         q_old = self.report_q(state)[action + 1]
         q_local = self.q_local(reward, newstate)
         self.Q[tuple(state + [action + 1])] = (
@@ -198,7 +205,7 @@ class q_learner:
         Q (scalar float):
           The Q-value of the selected action
         """
-        q = self.report_q(state)
+        q = self.report_q([round(s) for s in state])
         return np.argmax(q) - 1, np.max(q)
 
     def act(self, state):
@@ -220,6 +227,7 @@ class q_learner:
         0 if the paddle should be stationary
         1 if the paddle should move downward
         """
+        state = [round(s) for s in state]
         action = self.choose_unexplored_action(state)
         if action is None:
             if np.random.random() < self.epsilon:
@@ -228,13 +236,6 @@ class q_learner:
             else:
                 action, _ = self.exploit(state)
                 self.N[tuple(state + [action + 1])] += 1
-        newstate = state[:]
-        # Position of the paddle cannot less than 0 or greater than the maximum
-        # value specified in state_cardinality
-        newstate[-1] == min(
-            self.state_cardinality[-1] - 1, max(0, newstate[-1] + action)
-        )
-        self.learn(state, action, 0, newstate)
         return action
 
 
@@ -267,6 +268,11 @@ class deep_q:
             nn.ReLU(),
             nn.Linear(in_features=256, out_features=1),
         )
+        self.actor = nn.Sequential(
+            nn.Linear(self.state_dim, 256),
+            nn.ReLU(),
+            nn.Linear(in_features=256, out_features=1),
+        )
 
     def report_q(self, state):
         """
@@ -296,21 +302,15 @@ class deep_q:
         0 if the paddle should be stationary
         1 if the paddle should move downward
         """
-        # With probability epsilon, choose an action uniformly at random.
+        # With probability epsilon, choose an action uniformly at random
         if np.random.random() < self.epsilon:
-            return random.random() * 2 - 1
-        probabilities = nn.Softmax(dim=0)(
-            torch.tensor(
-                [
-                    self.critic(torch.tensor(state + [action]).float())
-                    for action in [-1, 0, 1]
-                ]
-            )
-        )
-        # Otherwise, act based on the probabilities of each action
-        return torch.dot(
-            torch.tensor([-1, 0, 1]).float(), probabilities
-        ).item()
+            action = random.random() * 2 - 1
+            # print(f"state: {state}, action: {action}, random")
+        # Otherwise, choose the action with the best Q(state, action)
+        else:
+            action = self.actor(torch.tensor(state).float())
+            # print(f"state: {state}, action: {action}, best")
+        return float(action)
 
     def learn(self, state, action, reward, newstate):
         """
@@ -325,15 +325,23 @@ class deep_q:
         @return:
         None
         """
-        optimizer = torch.optim.Adam(self.critic.parameters(), lr=self.alpha)
-        q_local = reward + self.gamma * self.critic(
-            torch.tensor(newstate + [self.act(newstate)])
-        )
-        q_target = self.critic(torch.tensor(state + [action]))
-        loss = F.mse_loss(q_local, q_target)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        optim_critic = optim.Adam(self.critic.parameters(), lr=self.alpha)
+        action = self.actor(torch.tensor(state).float()).item()
+        q_local = reward + self.gamma * self.critic(torch.tensor(newstate + [action])).float()
+        q_target = self.critic(torch.tensor(state + [action]).float())
+        loss_critic = F.mse_loss(q_local, q_target)
+        optim_critic.zero_grad()
+        loss_critic.backward()
+        optim_critic.step()
+
+        optim_actor = optim.Adam(self.actor.parameters(), lr=self.alpha)
+        q_target_cp = q_target.clone().detach()
+        loss_actor = -self.actor(torch.tensor(state).float()).dot(q_target_cp)
+        optim_actor.zero_grad()
+        loss_actor.backward()
+        optim_actor.step()
+
+        # print(f"loss (actor): {loss_actor:<20.4f}, loss (critic): {loss_critic:<20.4f}")
 
     def save(self, filename):
         """
@@ -347,7 +355,13 @@ class deep_q:
         None
         """
         with open(filename, "wb") as f:
-            torch.save(self.critic.state_dict(), f)
+            torch.save(
+                {
+                    "critic": self.critic.state_dict(),
+                    "actor": self.actor.state_dict(),
+                },
+                f,
+            )
 
     def load(self, filename):
         """
@@ -361,4 +375,6 @@ class deep_q:
         None
         """
         with open(filename, "rb") as f:
-            self.critic.load_state_dict(torch.load(f))
+            data = torch.load(f)
+            self.critic.load_state_dict(data["critic"])
+            self.actor.load_state_dict(data["actor"])
